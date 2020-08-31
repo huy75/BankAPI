@@ -6,15 +6,25 @@
 
 #######################################################################
 # RESTFul API to handle basic bank transactions (via Postman)
-# /register : register a new user (username, password)
+#
+# CRUD: Creation, Read, Update, Delete
+# Creation (post)
+# /register: register a new user (username, password)
+# Read
+# /users: list all registered users (get)
+# /balance: balance of an account (post: username, password)
+# Update (post)
 # /deposit : deposit (username, password, amount), fee applied
 # /transfer : transfer (username, password, to, amount), fee applied
-# /balance : balance of an account (username, password)
 # /takeloan : take a loan from the "BANK" (username, password, amount)
 # /payloan : reimburse full or part (username, password, amount)
-# each user, including "BANK",
+# Delete
+# /del : delete an user (username)
+# 
+# Each user, including "BANK",
 # has "Username", "Password", "Own", "Debt" attributes
-# The "BANK" account must be the first one to register
+# The "BANK" user must be registered before any deposit or transfer
+# operation to take place.
 #######################################################################
 from flask import Flask, jsonify, request
 from flask_restful import Api, Resource
@@ -44,10 +54,8 @@ def userExists(username):
 def correctPw(username, password):
     if not userExists(username):
         return False
-
     # retrieve the hashed password
     hashed_pw = users.find({"Username": username})[0]["Password"]
-
     return bcrypt.hashpw(password.encode("utf8"), hashed_pw) == hashed_pw
 
 
@@ -83,6 +91,10 @@ def updateDebt(username, balance):
     users.update({"Username": username}, {"$set": {"Debt": balance}})
 
 
+def deleteUser(username):
+    users.delete_one({"Username": username})
+
+
 #########################################################
 ########### Define the resources ########################
 #########################################################
@@ -95,7 +107,7 @@ class Register(Resource):
         password = postedData["password"]
 
         if userExists(username):
-            return jsonify(generateStatus(301, "Invalid Username"))
+            return jsonify(generateStatus(301, "Username already used"))
 
         hashed_pw = bcrypt.hashpw(password.encode("utf8"), bcrypt.gensalt())
 
@@ -105,9 +117,31 @@ class Register(Resource):
         return jsonify(generateStatus(200, "Successful signed up"))
 
 
+class Users(Resource):
+    def get(self):
+        list_all = users.distinct("Username")
+        retJson = {"status": 200, "users": str(list_all)}
+        return jsonify(retJson)
+
+
+class Balance(Resource):
+    def post(self):
+        postedData = request.get_json()
+
+        username = postedData["username"]
+        password = postedData["password"]
+
+        retJson, error = checkCredentials(username, password)
+        if error:
+            return jsonify(retJson)
+
+        # projection : returns everything but _id & password
+        retJson = users.find({"Username": username}, {"Password": 0, "_id": 0})[0]
+        return jsonify(retJson)
+    
+    
 class Deposit(Resource):
     def post(self):
-        # Get posted data (on Postman)
         postedData = request.get_json()
 
         username = postedData["username"]
@@ -138,7 +172,6 @@ class Deposit(Resource):
 
 class Transfer(Resource):
     def post(self):
-        # Get posted data (on Postman)
         postedData = request.get_json()
 
         username = postedData["username"]
@@ -179,27 +212,8 @@ class Transfer(Resource):
         return jsonify(generateStatus(200, "Amount added to account"))
 
 
-class Balance(Resource):
-    def post(self):
-        # Get posted data (on Postman)
-        postedData = request.get_json()
-
-        username = postedData["username"]
-        password = postedData["password"]
-
-        retJson, error = checkCredentials(username, password)
-        if error:
-            return jsonify(retJson)
-
-        # projection : returns everything but _id & password
-        retJson = users.find({"Username": username}, {"Password": 0, "_id": 0})[0]
-
-        return jsonify(retJson)
-
-
 class TakeLoan(Resource):
     def post(self):
-        # Get posted data (on Postman)
         postedData = request.get_json()
 
         username = postedData["username"]
@@ -223,7 +237,6 @@ class TakeLoan(Resource):
 
 class PayLoan(Resource):
     def post(self):
-        # Get posted data (on Postman)
         postedData = request.get_json()
 
         username = postedData["username"]
@@ -256,19 +269,32 @@ class PayLoan(Resource):
         return jsonify(generateStatus(200, "Loan paid"))
 
 
+class Delete(Resource):
+    def delete(self):
+        postedData = request.get_json()
+        username = postedData["username"]
+        if userExists(username):
+            deleteUser(postedData["username"])
+            return jsonify(generateStatus(200, "User deleted"))
+        
+        return jsonify(generateStatus(301, "Invalid Username"))
+
+
+
 #########################################################
 ##### Route the resources to the paths (Postman) ########
 #########################################################
 api.add_resource(Register, "/register")
+api.add_resource(Users, "/users")
+api.add_resource(Balance, "/balance")
 api.add_resource(Deposit, "/deposit")
 api.add_resource(Transfer, "/transfer")
-api.add_resource(Balance, "/balance")
 api.add_resource(TakeLoan, "/takeloan")
 api.add_resource(PayLoan, "/payloan")
+api.add_resource(Delete, "/delete")
 
 #########################################################
 ########### Run app.py on Docker local host #############
 #########################################################
 if __name__ == "__main__":
     app.run(host="0.0.0.0")
-
