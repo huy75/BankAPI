@@ -19,7 +19,7 @@
 # /takeloan : take a loan from the "BANK" (username, password, amount)
 # /payloan : reimburse full or part (username, password, amount)
 # Delete
-# /del : delete an user (username)
+# /delete : delete an user (username)
 # 
 # Each user, including "BANK",
 # has "Username", "Password", "Own", "Debt" attributes
